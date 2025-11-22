@@ -21,8 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { History, Search, Download, FilterX, ArrowUpDown } from "lucide-react";
+import { History, Search, Download, FilterX, ArrowUpDown, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface LedgerEntry {
   id: number;
@@ -61,23 +62,36 @@ export default function StockHistoryPage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Fetch ledger data with pagination
   const fetchLedger = useCallback(async (isLoadMore = false) => {
     try {
+      setApiError(null);
       const token = localStorage.getItem("bearer_token");
+      
+      // Build API URL with parameters
       let apiUrl = `/api/stock-ledger?limit=50&page=${isLoadMore ? page : 1}`;
       
+      // Add filters only if they're set
       if (filterType !== "all") apiUrl += `&operationType=${filterType}`;
       if (dateRange.from) apiUrl += `&startDate=${dateRange.from}`;
       if (dateRange.to) apiUrl += `&endDate=${dateRange.to}`;
+      
+      console.log("Fetching ledger data from:", apiUrl); // Debug log
 
       const response = await fetch(apiUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) throw new Error("Failed to fetch stock history");
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API error:", errorText);
+        throw new Error(`Failed to fetch stock history: ${response.status} ${errorText}`);
+      }
+      
       const data = await response.json();
+      console.log("Received ledger data:", data); // Debug log
       
       if (isLoadMore) {
         setLedger(prev => [...prev, ...data]);
@@ -88,6 +102,8 @@ export default function StockHistoryPage() {
       // Check if there's more data to load
       setHasMore(data.length === 50);
     } catch (error) {
+      console.error("Error fetching ledger:", error);
+      setApiError(error instanceof Error ? error.message : "Failed to load stock history");
       toast.error("Failed to load stock history");
     } finally {
       setIsLoading(false);
@@ -96,8 +112,9 @@ export default function StockHistoryPage() {
 
   // Initial data fetch
   useEffect(() => {
+    setIsLoading(true);
     fetchLedger();
-  }, [filterType, dateRange]);
+  }, [filterType, dateRange, fetchLedger]);
 
   // Handle load more
   const handleLoadMore = () => {
@@ -243,6 +260,15 @@ export default function StockHistoryPage() {
   // Check if any filters are active
   const hasActiveFilters = filterType !== "all" || searchTerm || dateRange.from || dateRange.to;
 
+  // Get operation type counts
+  const operationCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    ledger.forEach(entry => {
+      counts[entry.operationType] = (counts[entry.operationType] || 0) + 1;
+    });
+    return counts;
+  }, [ledger]);
+
   return (
     <div className="container mx-auto py-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -260,6 +286,13 @@ export default function StockHistoryPage() {
           {isExporting ? "Exporting..." : "Export CSV"}
         </Button>
       </div>
+
+      {apiError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{apiError}</AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
@@ -296,11 +329,11 @@ export default function StockHistoryPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Operations</SelectItem>
-                <SelectItem value="receipt">Receipts</SelectItem>
-                <SelectItem value="delivery">Deliveries</SelectItem>
-                <SelectItem value="transfer_in">Transfers In</SelectItem>
-                <SelectItem value="transfer_out">Transfers Out</SelectItem>
-                <SelectItem value="adjustment">Adjustments</SelectItem>
+                <SelectItem value="receipt">Receipts ({operationCounts.receipt || 0})</SelectItem>
+                <SelectItem value="delivery">Deliveries ({operationCounts.delivery || 0})</SelectItem>
+                <SelectItem value="transfer_in">Transfers In ({operationCounts.transfer_in || 0})</SelectItem>
+                <SelectItem value="transfer_out">Transfers Out ({operationCounts.transfer_out || 0})</SelectItem>
+                <SelectItem value="adjustment">Adjustments ({operationCounts.adjustment || 0})</SelectItem>
               </SelectContent>
             </Select>
             
