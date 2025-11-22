@@ -386,17 +386,38 @@ export default function ProductsPage() {
   }, [searchTerm, filterCategory, filterStockStatus, sortBy, filterLowStock]);
 
   const fetchProducts = async () => {
+    setIsLoading(true);
     try {
       const token = localStorage.getItem("bearer_token");
-      let url = "/api/products?limit=100";
+      const params = new URLSearchParams();
+      params.append("limit", "1000");
       
-      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
-      if (filterCategory !== "all") url += `&category=${filterCategory}`;
-      if (filterStockStatus !== "all") url += `&stockStatus=${filterStockStatus}`;
-      if (filterLowStock) url += `&lowStock=true`;
-      if (sortBy) url += `&sortBy=${sortBy}`;
+      // Search filter
+      if (searchTerm.trim()) {
+        params.append("search", searchTerm.trim());
+      }
+      
+      // Category filter
+      if (filterCategory !== "all") {
+        params.append("categoryId", filterCategory);
+      }
+      
+      // Stock status filter
+      if (filterStockStatus !== "all") {
+        params.append("stockStatus", filterStockStatus);
+      }
+      
+      // Low stock filter
+      if (filterLowStock) {
+        params.append("lowStock", "true");
+      }
+      
+      // Sort by
+      if (sortBy) {
+        params.append("sortBy", sortBy);
+      }
 
-      const response = await fetch(url, {
+      const response = await fetch(`/api/products?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -405,6 +426,7 @@ export default function ProductsPage() {
       setProducts(data);
     } catch (error) {
       toast.error("Failed to load products");
+      console.error("Error fetching products:", error);
     } finally {
       setIsLoading(false);
     }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { products, categories } from '@/db/schema';
-import { eq, like, and, or, lte, sql } from 'drizzle-orm';
+import { eq, like, and, or, lte, sql, asc, desc, gt } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,9 +9,11 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
     const search = searchParams.get('search');
-    const categoryId = searchParams.get('category');
+    const categoryId = searchParams.get('categoryId');
     const lowStock = searchParams.get('lowStock');
     const isActive = searchParams.get('isActive');
+    const stockStatus = searchParams.get('stockStatus');
+    const sortBy = searchParams.get('sortBy') || 'name';
 
     let query = db.select().from(products);
     const conditions = [];
@@ -27,6 +29,22 @@ export async function GET(request: NextRequest) {
     // Low stock filter
     if (lowStock === 'true') {
       conditions.push(lte(products.currentStock, sql`${products.reorderLevel}`));
+    }
+
+    // Stock status filter
+    if (stockStatus) {
+      if (stockStatus === 'outOfStock') {
+        conditions.push(eq(products.currentStock, 0));
+      } else if (stockStatus === 'lowStock') {
+        conditions.push(
+          and(
+            gt(products.currentStock, 0),
+            lte(products.currentStock, sql`${products.reorderLevel}`)
+          )
+        );
+      } else if (stockStatus === 'inStock') {
+        conditions.push(gt(products.currentStock, sql`${products.reorderLevel}`));
+      }
     }
 
     // Active status filter
@@ -48,6 +66,30 @@ export async function GET(request: NextRequest) {
     // Apply all conditions
     if (conditions.length > 0) {
       query = query.where(and(...conditions));
+    }
+
+    // Apply sorting
+    switch (sortBy) {
+      case 'name':
+        query = query.orderBy(asc(products.name));
+        break;
+      case 'nameDesc':
+        query = query.orderBy(desc(products.name));
+        break;
+      case 'stockHigh':
+        query = query.orderBy(desc(products.currentStock));
+        break;
+      case 'stockLow':
+        query = query.orderBy(asc(products.currentStock));
+        break;
+      case 'priceHigh':
+        query = query.orderBy(desc(products.sellingPrice));
+        break;
+      case 'priceLow':
+        query = query.orderBy(asc(products.sellingPrice));
+        break;
+      default:
+        query = query.orderBy(asc(products.name));
     }
 
     const results = await query.limit(limit).offset(offset);
@@ -75,6 +117,7 @@ export async function POST(request: NextRequest) {
       sellingPrice,
       description,
       isActive,
+      image,
     } = body;
 
     // Validate required fields
@@ -144,6 +187,7 @@ export async function POST(request: NextRequest) {
         sellingPrice: sellingPrice !== undefined ? parseFloat(sellingPrice) : 0,
         description: description?.trim() || null,
         isActive: isActive !== undefined ? Boolean(isActive) : true,
+        image: image || null,
         createdAt: now,
         updatedAt: now,
       })
@@ -208,6 +252,7 @@ export async function PUT(request: NextRequest) {
       sellingPrice,
       description,
       isActive,
+      image,
     } = body;
 
     // Validate required fields if provided
@@ -278,6 +323,7 @@ export async function PUT(request: NextRequest) {
     if (sellingPrice !== undefined) updates.sellingPrice = parseFloat(sellingPrice);
     if (description !== undefined) updates.description = description?.trim() || null;
     if (isActive !== undefined) updates.isActive = Boolean(isActive);
+    if (image !== undefined) updates.image = image || null;
 
     const updatedProduct = await db
       .update(products)
