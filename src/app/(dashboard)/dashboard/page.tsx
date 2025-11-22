@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, AlertTriangle, PackagePlus, Truck, ArrowLeftRight, DollarSign } from "lucide-react";
+import { Package, AlertTriangle, PackagePlus, Truck, ArrowLeftRight, IndianRupee } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
@@ -115,7 +115,7 @@ export default function DashboardPage() {
         <Card className="hover:shadow-md transition-shadow sm:col-span-2 lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Stock Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -123,7 +123,7 @@ export default function DashboardPage() {
             ) : (
               <>
                 <div className="text-2xl font-bold">
-                  ${(stats?.totalStockValue || 0).toLocaleString()}
+                  ₹{(stats?.totalStockValue || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Total inventory value</p>
               </>
