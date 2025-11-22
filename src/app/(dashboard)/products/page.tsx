@@ -695,8 +695,8 @@ export default function ProductsPage() {
                     </TableCell>
                     <TableCell>{product.reorderLevel}</TableCell>
                     <TableCell>{product.unitOfMeasure}</TableCell>
-                    <TableCell>${product.costPrice}</TableCell>
-                    <TableCell>${product.sellingPrice}</TableCell>
+                    <TableCell>₹{product.costPrice}</TableCell>
+                    <TableCell>₹{product.sellingPrice}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusColor(getStockStatus(product))}>
                         {getStockStatus(product)}
@@ -765,7 +765,7 @@ export default function ProductsPage() {
                     </div>
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-sm text-muted-foreground">Price</span>
-                      <span>${product.sellingPrice}</span>
+                      <span>₹{product.sellingPrice}</span>
                     </div>
                     <div className="flex items-center gap-2 pt-3 border-t">
                       <Button
