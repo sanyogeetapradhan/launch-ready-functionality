@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { transfers } from '@/db/schema';
+import { transfers, transferItems, products } from '@/db/schema';
 import { eq, like, and, or, gte, lte, ne } from 'drizzle-orm';
 import { getCurrentUser } from '@/lib/auth';
 
@@ -176,7 +176,38 @@ export async function POST(request: NextRequest) {
       .values(insertData)
       .returning();
 
-    return NextResponse.json(newTransfer[0], { status: 201 });
+    const created = newTransfer[0];
+
+    // If items provided, validate and insert into transfer_items
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      const itemsToInsert: any[] = [];
+      for (const it of body.items) {
+        const { productId, quantity } = it;
+
+        // Validate product exists
+        const prod = await db.select().from(products).where(eq(products.id, parseInt(String(productId)))).limit(1);
+        if (prod.length === 0) {
+          return NextResponse.json({ error: `Product ID ${productId} not found`, code: 'PRODUCT_NOT_FOUND' }, { status: 400 });
+        }
+
+        if (isNaN(parseInt(String(quantity))) || parseInt(String(quantity)) <= 0) {
+          return NextResponse.json({ error: 'Item quantity must be a positive integer', code: 'INVALID_ITEM_QUANTITY' }, { status: 400 });
+        }
+
+        itemsToInsert.push({
+          transferId: created.id,
+          productId: parseInt(String(productId)),
+          quantity: parseInt(String(quantity)),
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      if (itemsToInsert.length > 0) {
+        await db.insert(transferItems).values(itemsToInsert);
+      }
+    }
+
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
     

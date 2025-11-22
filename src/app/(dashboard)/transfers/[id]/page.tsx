@@ -34,39 +34,66 @@ export default function TransferDetailPage() {
   const router = useRouter();
   const [transfer, setTransfer] = useState<TransferDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [productStocks, setProductStocks] = useState<Record<number, Array<{warehouseId: number; quantity: number}>>>({});
+
+  // expose fetchDetail so it can be reused after actions
+  const fetchDetail = async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('bearer_token') : null;
+      const res = await fetch(`/api/transfers/${id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          toast.error('Transfer not found');
+          router.push('/transfers');
+          return;
+        }
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Failed to fetch transfer: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setTransfer(data);
+
+      // fetch product stock for each item so we can display From/To availability
+      if (data?.items && data.items.length > 0) {
+        const stocks: Record<number, Array<{warehouseId: number; quantity: number}>> = {};
+        for (const it of data.items) {
+          try {
+            const stockRes = await fetch(`/api/products/${it.productId}/stock`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (stockRes.ok) {
+              const s = await stockRes.json().catch(() => []);
+              stocks[it.productId] = s;
+            } else {
+              stocks[it.productId] = [];
+            }
+          } catch (err) {
+            stocks[it.productId] = [];
+          }
+        }
+        setProductStocks(stocks);
+      } else {
+        setProductStocks({});
+      }
+    } catch (err) {
+      console.error('Fetch transfer error:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to load transfer');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!id) return;
-    const fetchDetail = async () => {
-      setIsLoading(true);
-      try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('bearer_token') : null;
-        const res = await fetch(`/api/transfers/${id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-
-        if (!res.ok) {
-          if (res.status === 404) {
-            toast.error('Transfer not found');
-            router.push('/transfers');
-            return;
-          }
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error || `Failed to fetch transfer: ${res.status}`);
-        }
-
-        const data = await res.json();
-        setTransfer(data);
-      } catch (err) {
-        console.error('Fetch transfer error:', err);
-        toast.error(err instanceof Error ? err.message : 'Failed to load transfer');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchDetail();
-  }, [id, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   if (isLoading) return <div className="p-6">Loading…</div>;
   if (!transfer) return (
