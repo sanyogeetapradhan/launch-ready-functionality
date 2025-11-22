@@ -139,27 +139,32 @@ export default function NewReceiptPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate receipt number exists
+    if (!receiptNumber) {
+      toast.error("Receipt number not generated");
+      return;
+    }
+    
     setIsSubmitting(true);
 
     try {
       const token = localStorage.getItem("bearer_token");
       
-      // supplier name comes directly from the text input
       const supplierName = formData.supplierName;
-
-      // try to get current user id for created_by (optional)
-      const createdBy = localStorage.getItem("user_id") || localStorage.getItem("user") || undefined;
+      // const createdBy = localStorage.getItem("user_id");
+      
+      // Ensure createdBy is a number if it exists
+      // const createdByValue = createdBy ? Number(createdBy) : null;
+      const createdByValue = null;
 
       const receiptData = {
-        // DB column names (snake_case) to match your receipts table
-        receipt_number: receiptNumber,
-        warehouse_id: formData.warehouseId ? Number(formData.warehouseId) : null,
-        supplier_name: supplierName,
+        receiptNumber: receiptNumber,
+        warehouseId: formData.warehouseId ? Number(formData.warehouseId) : null,
+        supplierName: supplierName,
         status: "draft",
         notes: formData.notes,
-        created_by: createdBy,
-        created_at: new Date().toISOString(),
-        // keep items for backend to persist in related table
+        createdAt: new Date().toISOString(),
         items: receiptItems.filter(item => item.productId > 0 && item.quantity > 0)
       };
 
@@ -174,6 +179,7 @@ export default function NewReceiptPage() {
 
       if (!response.ok) {
         const error = await response.json();
+        console.log(error);
         throw new Error(error.error || "Failed to create receipt");
       }
 
