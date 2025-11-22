@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚀 Launch-Ready Inventory Management System
+# 🚀  Inventory Management System
 
 *A modern, full-stack inventory management solution built for the Odoo Hackathon*
 
@@ -63,6 +63,14 @@ This project was developed by **Decoder** as part of the Odoo Hackathon, demonst
 - **Transfers**: Internal stock movements
 - **Adjustments**: Stock corrections with audit trails
 
+### 🤖 AI-Powered Chatbot Assistant
+- **StockMaster AI**: Intelligent chatbot for inventory navigation and alerts
+- **Proactive Alerts**: Automatic notifications for low stock and pending operations
+- **Natural Language Processing**: Navigate the system using plain English commands
+- **Quick Actions**: One-click access to common tasks and pages
+- **Real-time Stats**: Live inventory statistics and insights
+- **Smart Suggestions**: Context-aware recommendations and guidance
+
 ### 📈 Analytics & Reporting
 - Real-time dashboard with key metrics
 - Stock status indicators (In Stock, Low Stock, Out of Stock)
@@ -86,6 +94,7 @@ This project was developed by **Decoder** as part of the Odoo Hackathon, demonst
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **State Management**: React Hooks
 - **Notifications**: [Sonner](https://sonner.emilkowal.ski/)
+- **AI Chatbot**: Custom-built StockMaster assistant
 
 ### Backend
 - **Runtime**: Next.js API Routes
@@ -260,6 +269,7 @@ npm run db:push
 - **Loading States**: Skeleton screens and loading indicators
 - **Toast Notifications**: User feedback with Sonner
 - **Intuitive Navigation**: Sidebar navigation with clear hierarchy
+- **AI Chatbot**: StockMaster assistant for easy navigation and helpful alerts
 
 ---
 
@@ -338,6 +348,6 @@ We welcome contributions! Please follow these steps:
 
 ⭐ Star this repo if you found it helpful!
 
-[Back to top](#-launch-ready-inventory-management-system)
+[Back to top](#inventory-management-system)
 
 </div>
