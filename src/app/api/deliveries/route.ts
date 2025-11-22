@@ -152,11 +152,14 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (!warehouseId || isNaN(parseInt(String(warehouseId)))) {
-      return NextResponse.json({ 
-        error: "Valid warehouseId is required",
-        code: "MISSING_WAREHOUSE_ID" 
-      }, { status: 400 });
+    // warehouseId is optional; if provided validate it's a number
+    if (warehouseId !== undefined && warehouseId !== null && String(warehouseId).trim() !== '') {
+      if (isNaN(parseInt(String(warehouseId)))) {
+        return NextResponse.json({
+          error: "Valid warehouseId is required",
+          code: "INVALID_WAREHOUSE_ID"
+        }, { status: 400 });
+      }
     }
 
     if (!customerName || typeof customerName !== 'string' || customerName.trim() === '') {
@@ -187,23 +190,26 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // Validate warehouse exists
-    const warehouse = await db.select()
-      .from(warehouses)
-      .where(eq(warehouses.id, parseInt(String(warehouseId))))
-      .limit(1);
+    // Validate warehouse exists if provided
+    let warehouseRecord: any = null;
+    if (warehouseId !== undefined && warehouseId !== null && String(warehouseId).trim() !== '') {
+      warehouseRecord = await db.select()
+        .from(warehouses)
+        .where(eq(warehouses.id, parseInt(String(warehouseId))))
+        .limit(1);
 
-    if (warehouse.length === 0) {
-      return NextResponse.json({ 
-        error: "Warehouse not found",
-        code: "WAREHOUSE_NOT_FOUND" 
-      }, { status: 400 });
+      if (warehouseRecord.length === 0) {
+        return NextResponse.json({
+          error: "Warehouse not found",
+          code: "WAREHOUSE_NOT_FOUND"
+        }, { status: 400 });
+      }
     }
 
     // Prepare insert data
     const insertData = {
       deliveryNumber: deliveryNumber.trim(),
-      warehouseId: parseInt(String(warehouseId)),
+      warehouseId: (warehouseId !== undefined && warehouseId !== null && String(warehouseId).trim() !== '') ? parseInt(String(warehouseId)) : null,
       customerName: customerName.trim(),
       status: status || 'draft',
       notes: notes ? String(notes).trim() : null,

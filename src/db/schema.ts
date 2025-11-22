@@ -96,6 +96,7 @@ export const products = sqliteTable('products', {
   costPrice: integer('cost_price', { mode: 'number' }).default(0),
   sellingPrice: integer('selling_price', { mode: 'number' }).default(0),
   description: text('description'),
+  image: text('image'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

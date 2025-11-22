@@ -83,53 +83,97 @@ export async function POST(
     }
 
     // Check stock availability for all items BEFORE processing
-    const stockChecks = [];
+    // Support two modes:
+    // - If delivery.warehouseId is set: check that warehouse only (existing behavior)
+    // - If delivery.warehouseId is null/undefined: check total available across all warehouses and plan reductions across them
+    const stockChecks: Array<any> = [];
     for (const item of items) {
-      const stock = await db
-        .select()
-        .from(productStock)
-        .where(
-          and(
-            eq(productStock.productId, item.productId),
-            eq(productStock.warehouseId, currentDelivery.warehouseId!)
-          )
-        )
-        .limit(1);
-
-      if (stock.length === 0 || stock[0].quantity < item.quantity) {
-        const product = await db
+      if (currentDelivery.warehouseId) {
+        const stock = await db
           .select()
-          .from(products)
-          .where(eq(products.id, item.productId))
+          .from(productStock)
+          .where(
+            and(
+              eq(productStock.productId, item.productId),
+              eq(productStock.warehouseId, currentDelivery.warehouseId!)
+            )
+          )
           .limit(1);
 
-        return NextResponse.json(
-          {
-            error: `Insufficient stock for product ${product[0]?.name || item.productId} in warehouse ${currentDelivery.warehouseId}`,
-            code: 'INSUFFICIENT_STOCK',
-            details: {
-              productId: item.productId,
-              productName: product[0]?.name,
-              warehouseId: currentDelivery.warehouseId,
-              required: item.quantity,
-              available: stock.length > 0 ? stock[0].quantity : 0
-            }
-          },
-          { status: 400 }
-        );
-      }
+        if (stock.length === 0 || stock[0].quantity < item.quantity) {
+          const product = await db
+            .select()
+            .from(products)
+            .where(eq(products.id, item.productId))
+            .limit(1);
 
-      stockChecks.push({
-        item,
-        currentStock: stock[0]
-      });
+          return NextResponse.json(
+            {
+              error: `Insufficient stock for product ${product[0]?.name || item.productId} in warehouse ${currentDelivery.warehouseId}`,
+              code: 'INSUFFICIENT_STOCK',
+              details: {
+                productId: item.productId,
+                productName: product[0]?.name,
+                warehouseId: currentDelivery.warehouseId,
+                required: item.quantity,
+                available: stock.length > 0 ? stock[0].quantity : 0
+              }
+            },
+            { status: 400 }
+          );
+        }
+
+        stockChecks.push({
+          item,
+          mode: 'single',
+          currentStock: stock[0]
+        });
+      } else {
+        // no warehouse specified on delivery: aggregate across all warehouses
+        const stocks = await db
+          .select()
+          .from(productStock)
+          .where(eq(productStock.productId, item.productId));
+
+        const totalAvailable = stocks.reduce((s: number, r: any) => s + (r.quantity || 0), 0);
+        if (totalAvailable < item.quantity) {
+          const product = await db
+            .select()
+            .from(products)
+            .where(eq(products.id, item.productId))
+            .limit(1);
+
+          return NextResponse.json(
+            {
+              error: `Insufficient total stock for product ${product[0]?.name || item.productId}`,
+              code: 'INSUFFICIENT_STOCK',
+              details: {
+                productId: item.productId,
+                productName: product[0]?.name,
+                required: item.quantity,
+                available: totalAvailable
+              }
+            },
+            { status: 400 }
+          );
+        }
+
+        // Plan to deduct across warehouses. Order by quantity desc to take from fullest first
+        const stocksOrdered = stocks.sort((a: any, b: any) => (b.quantity || 0) - (a.quantity || 0));
+        stockChecks.push({
+          item,
+          mode: 'multi',
+          stocks: stocksOrdered
+        });
+      }
     }
 
     // Process all items in transaction-like manner
     const stockUpdates = [];
     const currentTimestamp = new Date().toISOString();
 
-    for (const { item, currentStock } of stockChecks) {
+    for (const check of stockChecks) {
+      const { item } = check;
       console.log(`Processing delivery item: Product ${item.productId}, Quantity ${item.quantity}`);
 
       // Decrease products.currentStock
@@ -153,39 +197,70 @@ export async function POST(
         console.log(`Updated product ${item.productId} currentStock: ${productResult[0].currentStock} -> ${newProductStock}`);
       }
 
-      // Decrease productStock.quantity
-      const newWarehouseStock = currentStock.quantity - item.quantity;
-      
-      await db
-        .update(productStock)
-        .set({
-          quantity: newWarehouseStock,
-          updatedAt: currentTimestamp
-        })
-        .where(eq(productStock.id, currentStock.id));
+      if (check.mode === 'single') {
+        const currentStock = check.currentStock;
+        // Decrease productStock.quantity
+        const newWarehouseStock = currentStock.quantity - item.quantity;
+        
+        await db
+          .update(productStock)
+          .set({
+            quantity: newWarehouseStock,
+            updatedAt: currentTimestamp
+          })
+          .where(eq(productStock.id, currentStock.id));
 
-      console.log(`Updated productStock for product ${item.productId} in warehouse ${currentDelivery.warehouseId}: ${currentStock.quantity} -> ${newWarehouseStock}`);
+        console.log(`Updated productStock for product ${item.productId} in warehouse ${currentDelivery.warehouseId}: ${currentStock.quantity} -> ${newWarehouseStock}`);
 
-      // Create stock ledger entry
-      await db.insert(stockLedger).values({
-        productId: item.productId,
-        warehouseId: currentDelivery.warehouseId!,
-        operationType: 'delivery',
-        referenceNumber: currentDelivery.deliveryNumber,
-        quantityChange: -item.quantity,
-        quantityAfter: newWarehouseStock,
-        createdBy: user.id,
-        createdAt: currentTimestamp,
-        notes: `Delivery validation: ${currentDelivery.deliveryNumber}`
-      });
+        // Create stock ledger entry
+        await db.insert(stockLedger).values({
+          productId: item.productId,
+          warehouseId: currentDelivery.warehouseId!,
+          operationType: 'delivery',
+          referenceNumber: currentDelivery.deliveryNumber,
+          quantityChange: -item.quantity,
+          quantityAfter: newWarehouseStock,
+          createdBy: user.id,
+          createdAt: currentTimestamp,
+          notes: `Delivery validation: ${currentDelivery.deliveryNumber}`
+        });
 
-      console.log(`Created stock ledger entry: Product ${item.productId}, Change: -${item.quantity}, After: ${newWarehouseStock}`);
+        stockUpdates.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          newStock: newWarehouseStock,
+          warehouseId: currentDelivery.warehouseId
+        });
+      } else if (check.mode === 'multi') {
+        // Deduct across multiple warehouses until fulfilled
+        let remaining = item.quantity;
+        for (const s of check.stocks) {
+          if (remaining <= 0) break;
+          const take = Math.min(remaining, s.quantity);
+          const newQty = s.quantity - take;
 
-      stockUpdates.push({
-        productId: item.productId,
-        quantity: item.quantity,
-        newStock: newWarehouseStock
-      });
+          await db
+            .update(productStock)
+            .set({ quantity: newQty, updatedAt: currentTimestamp })
+            .where(eq(productStock.id, s.id));
+
+          await db.insert(stockLedger).values({
+            productId: item.productId,
+            warehouseId: s.warehouseId,
+            operationType: 'delivery',
+            referenceNumber: currentDelivery.deliveryNumber,
+            quantityChange: -take,
+            quantityAfter: newQty,
+            createdBy: user.id,
+            createdAt: currentTimestamp,
+            notes: `Delivery validation: ${currentDelivery.deliveryNumber}`
+          });
+
+          stockUpdates.push({ productId: item.productId, warehouseId: s.warehouseId, quantity: take, newStock: newQty });
+
+          remaining -= take;
+        }
+      }
     }
 
     // Update delivery status to done

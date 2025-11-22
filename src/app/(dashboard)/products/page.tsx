@@ -157,6 +157,11 @@ function AddProductModal({
                     src={imagePreview} 
                     alt="Product preview" 
                     className="h-32 w-32 mx-auto object-cover rounded-md" 
+                    onError={(e) => {
+                      const el = e.currentTarget as HTMLImageElement;
+                      console.warn('Product preview image failed to load:', el.src);
+                      el.src = 'https://via.placeholder.com/400x300.png?text=No+Image';
+                    }}
                   />
                   <Button
                     type="button"
@@ -573,10 +578,40 @@ export default function ProductsPage() {
             </Button>
           </div>
           
-          <Button onClick={openAddModal}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={openAddModal}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('bearer_token');
+                  if (!token) {
+                    toast.error('You must be logged in to run this');
+                    return;
+                  }
+                  const res = await fetch('/api/products/populate-images', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error(data?.error || 'Failed to populate images');
+                    return;
+                  }
+                  toast.success(`Populated images for ${data.updatedCount} products`);
+                  fetchProducts();
+                } catch (err) {
+                  console.error('populate images error', err);
+                  toast.error('Failed to populate images');
+                }
+              }}
+            >
+              Populate placeholders
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -729,8 +764,8 @@ export default function ProductsPage() {
               {products.map((product) => (
                 <Card key={product.id} className="overflow-hidden">
                   <div className="h-48 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 flex items-center justify-center">
-                    {product.image ? (
-                      <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+                      {product.image ? (
+                      <img src={product.image} alt={product.name} className="h-full w-full object-cover" onError={(e)=>{const el=e.currentTarget as HTMLImageElement; console.warn('Product image failed to load:', el.src); el.src='https://via.placeholder.com/400x300.png?text=No+Image';}} />
                     ) : (
                       <Package className="h-16 w-16 text-blue-500/50" />
                     )}
