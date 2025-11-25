@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { otpStore } from "@/lib/otp-store";
-import { db } from "@/lib/db"; // Your Drizzle db instance
-import { users } from "@/lib/db/schema"; // Your users table schema
+import { db } from "@/db"; // Your Drizzle db instance
+import { user as users } from "@/db/schema"; // Your users table schema
 import { eq } from "drizzle-orm";
-import { hash } from "bcrypt"; // or whatever hashing library you use
+import { hash } from "bcrypt"; // or whatever hashing library you 
 
 export async function POST(request: NextRequest) {
   try {
