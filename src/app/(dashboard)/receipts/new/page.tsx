@@ -19,6 +19,12 @@ import { toast } from "sonner";
 import { ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
 
+
+interface Supplier {
+  id: number;
+  name: string;
+}
+
 interface Warehouse {
   id: number;
   name: string;
@@ -35,16 +41,18 @@ interface ReceiptItem {
   productId: number;
   productName: string;
   quantity: number;
-  price: number;
-  total: number;
+  unitPrice: number;
+  stockQty?: number;
+  stockLoading?: boolean;
+  stockError?: string;
 }
 
 export default function NewReceiptPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-
+  const [products, setProducts] = useState<{ id: number; name: string; sku: string; sellingPrice?: number }[]>([]);
+  
   const [formData, setFormData] = useState({
     supplierName: "",
     warehouseId: "",
@@ -53,7 +61,7 @@ export default function NewReceiptPage() {
 
   const [receiptNumber, setReceiptNumber] = useState("");
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([
-    { productId: 0, productName: "", quantity: 1, price: 0, total: 0 },
+    { productId: 0, productName: "", quantity: 1, unitPrice: 0, stockQty: undefined, stockLoading: false, stockError: undefined }
   ]);
 
   useEffect(() => {
@@ -90,44 +98,81 @@ export default function NewReceiptPage() {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+    // If warehouse changes, refetch stock for all selected products
+    if (name === 'warehouseId') {
+      receiptItems.forEach(async (item, idx) => {
+        if (item.productId > 0) {
+          await handleItemChange(idx, 'productId', item.productId);
+        }
+      });
+    }
   };
 
-  // MAIN LOGIC FIXED HERE
-  const handleItemChange = (index: number, field: keyof ReceiptItem, value: string | number) => {
-    setReceiptItems((prev) => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
-
-      if (field === "productId") {
-        const productId = Number(value);
-        const product = products.find((p) => p.id === productId);
-
-        item.productId = productId;
-        item.productName = product ? product.name : "";
-        item.price = product ? Number(product.price) : 0;
-        item.total = item.quantity * item.price;
+  const handleItemChange = async (index: number, field: keyof ReceiptItem, value: string | number) => {
+    const updatedItems = [...receiptItems];
+    if (field === "productId") {
+      const productId = Number(value);
+      const product = products.find(p => p.id === productId);
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: productId,
+        productName: product ? product.name : "",
+        unitPrice: product && typeof product.sellingPrice === 'number' ? product.sellingPrice : 0,
+        stockQty: undefined,
+        stockLoading: true,
+        stockError: undefined,
+      };
+      setReceiptItems(updatedItems);
+      // Fetch stock for this product and selected warehouse
+      try {
+        const token = localStorage.getItem("bearer_token");
+        const stockRes = await fetch(`/api/products/${productId}/stock`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (stockRes.ok) {
+          const stockData = await stockRes.json();
+          let qty = undefined;
+          if (formData.warehouseId) {
+            const whStock = stockData.find((s: any) => s.warehouseId === Number(formData.warehouseId));
+            qty = whStock ? whStock.quantity : 0;
+          } else {
+            qty = Array.isArray(stockData) ? stockData.reduce((sum: number, s: any) => sum + (s.quantity || 0), 0) : 0;
+          }
+          updatedItems[index] = {
+            ...updatedItems[index],
+            stockQty: qty,
+            stockLoading: false,
+            stockError: undefined,
+          };
+        } else {
+          updatedItems[index] = {
+            ...updatedItems[index],
+            stockQty: undefined,
+            stockLoading: false,
+            stockError: 'Failed to fetch stock',
+          };
+        }
+      } catch (err) {
+        updatedItems[index] = {
+          ...updatedItems[index],
+          stockQty: undefined,
+          stockLoading: false,
+          stockError: 'Failed to fetch stock',
+        };
       }
-
-      if (field === "quantity") {
-        const qty = Number(value);
-        item.quantity = qty;
-        item.total = qty * item.price;
-      }
-
-      if (field === "price") {
-        const p = Number(value);
-        item.price = isNaN(p) ? 0 : p;
-        item.total = item.quantity * item.price;
-      }
-
-      updated[index] = item;
-      return updated;
-    });
+      setReceiptItems([...updatedItems]);
+    } else {
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: field === "quantity" ? Number(value) : value
+      };
+      setReceiptItems(updatedItems);
+    }
   };
 
   const addItem = () => {
-    setReceiptItems((prev) => [...prev, { productId: 0, productName: "", quantity: 1, price: 0, total: 0 }]);
+    setReceiptItems([...receiptItems, { productId: 0, productName: "", quantity: 1, unitPrice: 0, stockQty: undefined, stockLoading: false, stockError: undefined }]);
   };
 
   const removeItem = (index: number) => {
@@ -267,72 +312,88 @@ export default function NewReceiptPage() {
               <Button type="button" variant="outline" size="sm" onClick={addItem}>Add Item</Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-
-            {receiptItems.map((item, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-
-                <div className="md:col-span-2">
-                  <Label>Product</Label>
-                  <Select
-                    value={item.productId ? item.productId.toString() : ""}
-                    onValueChange={(val) => handleItemChange(index, "productId", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((p) => (
-                        <SelectItem key={p.id} value={p.id.toString()}>
-                          {p.name} ({p.sku})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label>Quantity</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    onChange={(e) => handleItemChange(index, "quantity", Number(e.target.value))}
-                  />
-                </div>
-
-                <div>
-                  <Label>Unit Price</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={item.price}
-                    onChange={(e) => handleItemChange(index, "price", Number(e.target.value))}
-                  />
-                </div>
-
-                <div>
-                  <Label>Total</Label>
-                  <Input value={item.total.toFixed(2)} readOnly />
-                </div>
-
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => removeItem(index)}
-                    disabled={receiptItems.length === 1}
-                    aria-label="Remove item"
-                  >
-                    ×
-                  </Button>
-                </div>
-
-              </div>
-            ))}
-
+          <CardContent>
+            <div className="space-y-4">
+              {receiptItems.map((item, index) => {
+                const lineTotal = (item.unitPrice ?? 0) * (item.quantity ?? 0);
+                return (
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor={`product-${index}`}>Product</Label>
+                      <Select
+                        value={item.productId.toString()}
+                        onValueChange={(value) => handleItemChange(index, "productId", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products.map((product) => (
+                            <SelectItem key={product.id} value={product.id.toString()}>
+                              {product.name} ({product.sku})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Stock Qty</Label>
+                      <div className="min-h-[38px] flex items-center">
+                        {item.stockLoading ? (
+                          <span className="text-xs text-muted-foreground">Loading…</span>
+                        ) : item.stockError ? (
+                          <span className="text-xs text-red-500">{item.stockError}</span>
+                        ) : item.productId > 0 ? (
+                          <span className="text-xs text-foreground">{typeof item.stockQty === 'number' ? item.stockQty : '-'}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`quantity-${index}`}>Quantity</Label>
+                      <Input
+                        id={`quantity-${index}`}
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Unit Price</Label>
+                      <div className="min-h-[38px] flex items-center">
+                        <span className="text-xs text-foreground">{typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : '-'}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Line Total</Label>
+                      <div className="min-h-[38px] flex items-center">
+                        <span className="text-xs text-foreground">{!isNaN(lineTotal) ? lineTotal.toFixed(2) : '-'}</span>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => removeItem(index)}
+                      disabled={receiptItems.length === 1}
+                    >
+                      ×
+                    </Button>
+                  </div>
+                );
+              })}
+                        {/* Total price summary */}
+                        <div className="mt-4 flex justify-end">
+                          <div className="text-right">
+                            <p className="text-sm text-muted-foreground">Total:</p>
+                            <p className="text-lg font-semibold">{
+                              receiptItems.reduce((sum, it) => sum + ((it.unitPrice ?? 0) * (it.quantity ?? 0)), 0).toFixed(2)
+                            }</p>
+                          </div>
+                        </div>
+            </div>
           </CardContent>
         </Card>
 
